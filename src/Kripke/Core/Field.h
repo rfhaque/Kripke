@@ -42,9 +42,16 @@ namespace Core {
       using View1dType = RAJA::internal::ViewBase<ElementType, ElementPtr, Layout1dType>;
 
 
-      explicit FieldStorage(Kripke::Core::Set const &spanned_set) :
+      explicit FieldStorage(Kripke::Core::Set const &spanned_set, MemorySpace m) :
         m_set(&spanned_set)
       {
+        if (m == MemorySpace::CPU) || (m == MemorySpace::GPU) {
+           m_host = MemorySpace::CPU;
+           m_device = MemorySpace::GPU; 
+        } else {
+           m_host = m
+           m_device = m;
+        }
 
         // initialize our decomposition to match that of the specified set
         setup_initChunks(spanned_set);
@@ -68,29 +75,7 @@ namespace Core {
 #ifndef KRIPKE_USE_CHAI
           m_chunk_to_data[chunk_id] = new ElementType[sdom_size];
 #else
-          m_chunk_to_data[chunk_id].allocate(sdom_size, chai::CPU,
-              [=](const chai::PointerRecord* record, chai::Action action, chai::ExecutionSpace space){
-                /*printf("CHAI[%s, %d]: ", BaseVar::getName().c_str(), (int)chunk_id);
-                switch(action){
-                case chai::ACTION_ALLOC: printf("ALLOC "); break;
-                case chai::ACTION_FREE: printf("FREE  "); break;
-                case chai::ACTION_MOVE: printf("MOVE  "); break;
-                default: printf("UNKNOWN ");
-                }
-
-                switch(space){
-                case chai::CPU: printf("CPU "); break;
-#ifdef KRIPKE_USE_CUDA
-                case chai::GPU: printf("GPU  "); break;
-#endif
-                default: printf("UNK ");
-                }
-
-                printf("%lu bytes\n", (unsigned long) bytes);
-*/
-              }
-
-          );
+          m_chunk_to_data[chunk_id].allocate(sdom_size, m_host);
 #endif
         }
       }
@@ -139,7 +124,7 @@ namespace Core {
         return  m_chunk_to_data[chunk_id];
 #else
         // use pointer conversion to get host pointer
-        ElementType *ptr = m_chunk_to_data[chunk_id].data(chai::CPU);
+        ElementType *ptr = m_chunk_to_data[chunk_id].data(m_host);
 
         // return host pointer
         return(ptr);
@@ -154,6 +139,8 @@ namespace Core {
       }
 
     protected:
+      MemorySpace h_space;
+      MemorySpace d_space;
       Kripke::Core::Set const *m_set;
       std::vector<size_t> m_chunk_to_size;
       std::vector<ElementPtr> m_chunk_to_data;
@@ -183,8 +170,8 @@ namespace Core {
       using DefaultViewType = RAJA::internal::ViewBase<ElementType, ElementPtr, DefaultLayoutType>;
 
       template<typename Order>
-      Field(Kripke::Core::Set const &spanned_set, Order) :
-        Parent(spanned_set)
+      Field(Kripke::Core::Set const &spanned_set, Order o, MemorySpace m = Field::defaultMemorySpace()) :
+        Parent(spanned_set, m)
       {
 
         KRIPKE_ASSERT(NumDims == spanned_set.getNumDimensions(),
@@ -245,7 +232,7 @@ namespace Core {
         LType layout = RAJA::make_stride_one<LInfo::stride_one_dim>(m_chunk_to_layout[chunk_id]);
 
 #if (defined(KRIPKE_USE_HIP) || defined(KRIPKE_USE_CUDA)) && defined(KRIPKE_USE_CHAI)
-        return ViewType<Order, ElementType, ElementType *, IDX_TYPES...>(Parent::m_chunk_to_data[chunk_id].data(chai::GPU), layout);
+        return ViewType<Order, ElementType, ElementType *, IDX_TYPES...>(Parent::m_chunk_to_data[chunk_id].data(m_device), layout);
 #else
         return ViewType<Order, ElementType, ElementType *, IDX_TYPES...>(Parent::m_chunk_to_data[chunk_id], layout);
 #endif

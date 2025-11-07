@@ -1,11 +1,12 @@
-//////////////////////////////////////////////////////////////////////////////
-// Copyright (c) 2016-24, Lawrence Livermore National Security, LLC and CHAI
-// project contributors. See the CHAI LICENSE file for details.
 //
-// SPDX-License-Identifier: BSD-3-Clause
-//////////////////////////////////////////////////////////////////////////////
-#ifndef CHAI_ArrayManager_HPP
-#define CHAI_ArrayManager_HPP
+// Copyright (c) 2014-25, Lawrence Livermore National Security, LLC
+// and Kripke project contributors. See the Kripke/COPYRIGHT file for details.
+//
+// SPDX-License-Identifier: (BSD-3-Clause)
+//
+  
+#ifndef Kripke_ArrayManager_HPP
+#define Kripke_ArrayManager_HPP
 
 #include "chai/config.hpp"
 #include "chai/ChaiMacros.hpp"
@@ -22,14 +23,41 @@
 #include "umpire/Allocator.hpp"
 #include "umpire/util/MemoryMap.hpp"
 
-#if defined(CHAI_ENABLE_CUDA)
+#if defined(KRIPKE_ENABLE_CUDA)
 #include <cuda_runtime_api.h>
 #endif
-#if defined(CHAI_ENABLE_HIP)
+#if defined(KRIPKE_ENABLE_HIP)
 #include "hip/hip_runtime_api.h"
 #endif
 
 namespace Kripke {
+
+enum class ExecutionSpace : int {
+  HOST = 0,
+#if defined(KRIPKE_ENABLE_CUDA) || defined(KRIPKE_ENABLE_HIP)
+  DEVICE,
+#endif
+  NUM_EXECUTION_SPACES,
+};
+
+enum class MemorySpace : int {
+  /*! CPU space */
+  CPU = 0,
+#if defined(KRIPKE_ENABLE_CUDA) || defined(KRIPKE_ENABLE_HIP)
+  /*! GPU space */
+  GPU,
+#if defined(KRIPKE_ENABLE_UM)
+  /*! UVM (Unified Virtual Memory) address space */
+  UVM,
+#endif
+#if defined(KRIPKE_ENABLE_MI300_UNIFIEDMEMORY)
+  /*! MI300 CPU/GPU single address space */
+  GPUONLY,
+#endif
+#endif
+  /*! Used to count total number of spaces */
+  NUM_MEMORY_SPACES,
+};
 
 class UmpireMemorySpace
 {
@@ -39,7 +67,6 @@ protected:
    bool owns_allocator{false};
 
 public:
-   virtual ~UmpireMemorySpace() { if (owns_allocator) { allocator.release(); } }
    UmpireMemorySpace(const char * name, const char * space)
       : rm(umpire::ResourceManager::getInstance())
    {
@@ -55,63 +82,7 @@ public:
          owns_allocator = false;
       }
    }
-};
-
-// The Umpire host memory space
-class UmpireHostMemorySpace : public UmpireMemorySpace
-{
-private:
-   umpire::strategy::AllocationStrategy *strat;
-public:
-   UmpireHostMemorySpace(const char * name)
-      : HostMemorySpace(),
-        UmpireMemorySpace(name, "HOST"),
-        strat(allocator.getAllocationStrategy()) {}
-   void Alloc(void **ptr, size_t bytes) override
-   { *ptr = allocator.allocate(bytes); }
-   void Dealloc(void *ptr) override { allocator.deallocate(ptr); }
-   void Insert(void *ptr, size_t bytes)
-   { rm.registerAllocation(ptr, {ptr, bytes, strat}); }
-};
-
-// The Umpire device memory space
-class UmpireDeviceMemorySpace : public UmpireMemorySpace
-{
-public:
-   UmpireDeviceMemorySpace(const char * name)
-      : DeviceMemorySpace(),
-        UmpireMemorySpace(name, "DEVICE") {}
-   void Alloc(Memory &base) override
-   { base.d_ptr = allocator.allocate(base.bytes); }
-   void Dealloc(Memory &base) override { allocator.deallocate(base.d_ptr); }
-   void *HtoD(void *dst, const void *src, size_t bytes) override
-   {
-      return gpuMemcpyHtoD(dst, src, bytes);
-   }
-   void *DtoD(void* dst, const void* src, size_t bytes) override
-   {
-      return gpuMemcpyDtoD(dst, src, bytes);
-   }
-   void *DtoH(void *dst, const void *src, size_t bytes) override
-   {
-      return gpuMemcpyDtoH(dst, src, bytes);
-   }
-};
-
-class UmpireHostMemorySpace : public UmpireMemorySpace
-{
-private:
-   umpire::strategy::AllocationStrategy *strat;
-public:
-   UmpireHostMemorySpace(const char * name)
-      : HostMemorySpace(),
-        UmpireMemorySpace(name, "HOST"),
-        strat(allocator.getAllocationStrategy()) {}
-   void Alloc(void **ptr, size_t bytes) override
-   { *ptr = allocator.allocate(bytes); }
-   void Dealloc(void *ptr) override { allocator.deallocate(ptr); }
-   void Insert(void *ptr, size_t bytes)
-   { rm.registerAllocation(ptr, {ptr, bytes, strat}); }
+   ~UmpireMemorySpace() { if (owns_allocator) { allocator.release(); } }
 };
 
 /*!
@@ -141,7 +112,7 @@ public:
 
   using PointerMap = umpire::util::MemoryMap<PointerRecord*>;
 
-  CHAISHAREDDLL_API static PointerRecord s_null_record;
+  static PointerRecord s_null_record;
 
   /*!
    * \brief Get the singleton instance.
@@ -149,7 +120,6 @@ public:
    * \return Pointer to the ArrayManager instance.
    *
    */
-  CHAISHAREDDLL_API
   static ArrayManager* getInstance();
 
   /*!
@@ -157,14 +127,14 @@ public:
    *
    * \param space The space to set as current.
    */
-  CHAISHAREDDLL_API void setExecutionSpace(ExecutionSpace space);
+  void setExecutionSpace(ExecutionSpace space);
 
   /*!
    * \brief Get the current execution space.
    *
    * \return The current execution space.jo
    */
-  CHAISHAREDDLL_API ExecutionSpace getExecutionSpace();
+  ExecutionSpace getExecutionSpace();
 
   /*!
    * \brief Move data in pointer to the current execution space.
@@ -172,16 +142,16 @@ public:
    * \param pointer Pointer to data in any execution space.
    * \return Pointer to data in the current execution space.
    */
-  CHAISHAREDDLL_API void* move(void* pointer,
-                               PointerRecord* pointer_record,
-                               ExecutionSpace = NONE);
+  void* move(void* pointer,
+             PointerRecord* pointer_record,
+             ExecutionSpace = NONE);
 
   /*!
    * \brief Register a touch of the pointer in the current execution space.
    *
    * \param pointer Raw pointer to register a touch of.
    */
-  CHAISHAREDDLL_API void registerTouch(PointerRecord* pointer_record);
+  void registerTouch(PointerRecord* pointer_record);
 
   /*!
    * \brief Register a touch of the pointer in the given execution space.
@@ -191,7 +161,7 @@ public:
    * \param pointer Raw pointer to register a touch of.
    * \param space Space to register touch.
    */
-  CHAISHAREDDLL_API void registerTouch(PointerRecord* pointer_record, ExecutionSpace space);
+  void registerTouch(PointerRecord* pointer_record, ExecutionSpace space);
 
   /*!
    * \brief Make a new allocation of the data described by the PointerRecord in
@@ -200,23 +170,7 @@ public:
    * \param pointer_record
    * \param space Space in which to make the allocation.
    */
-  CHAISHAREDDLL_API void allocate(PointerRecord* pointer_record, ExecutionSpace space = CPU);
-
-  /*!
-   * \brief Reallocate data.
-   *
-   * Data is reallocated in all spaces this pointer is associated with.
-   *
-   * \param ptr Pointer to address to reallocate
-   * \param elems The number of elements to allocate.
-   * \tparam T The type of data to allocate.
-   *
-   * \return Pointer to the allocated memory.
-   */
-  template <typename T>
-  void* reallocate(void* pointer,
-                   size_t elems,
-                   PointerRecord* record);
+  void allocate(PointerRecord* pointer_record, ExecutionSpace space = CPU);
 
   /*!
    * \brief Set the default space for new ManagedArray allocations.
@@ -226,7 +180,7 @@ public:
    *
    * \param space New space for default allocations.
    */
-  CHAISHAREDDLL_API void setDefaultAllocationSpace(ExecutionSpace space);
+  void setDefaultAllocationSpace(ExecutionSpace space);
 
   /*!
    * \brief Get the currently set default allocation space.
@@ -235,22 +189,14 @@ public:
    *
    * \return Current default space for allocations.
    */
-  CHAISHAREDDLL_API ExecutionSpace getDefaultAllocationSpace();
+  ExecutionSpace getDefaultAllocationSpace();
 
   /*!
    * \brief Free allocation(s) associated with the given PointerRecord.
    *        Default (space == NONE) will free all allocations and delete
    *        the pointer record.
    */
-  CHAISHAREDDLL_API void free(PointerRecord* pointer, ExecutionSpace space = NONE);
-
-#if defined(CHAI_ENABLE_PICK)
-  template <typename T>
-   T_non_const<T> pick(T* src_ptr, size_t index);
-
-  template <typename T>
-   void set(T* dst_ptr, size_t index, const T& val);
-#endif
+  void free(PointerRecord* pointer, ExecutionSpace space = NONE);
 
   /*!
    * \brief Get the size of the given pointer.
@@ -258,31 +204,19 @@ public:
    * \param pointer Pointer to find the size of.
    * \return Size of pointer.
    */
-  CHAISHAREDDLL_API size_t getSize(void* pointer);
+  size_t getSize(void* pointer);
 
-  CHAISHAREDDLL_API PointerRecord* makeManaged(void* pointer,
-                                               size_t size,
-                                               ExecutionSpace space,
-                                               bool owned);
-
-  /*!
-   * \brief Assign a user-defined callback triggered upon memory operations.
-   *        This callback applies to a single ManagedArray.
-   */
-  CHAISHAREDDLL_API void setUserCallback(void* pointer, UserCallback const& f);
-
-  /*!
-   * \brief Assign a user-defined callback triggered upon memory operations.
-   *        This callback applies to all ManagedArrays.
-   */
-  CHAISHAREDDLL_API void setGlobalUserCallback(UserCallback const& f);
+  PointerRecord* makeManaged(void* pointer,
+                             size_t size,
+                             ExecutionSpace space,
+                             bool owned);
 
   /*!
    * \brief Set touched to false in all spaces for the given PointerRecord.
    *
    * \param pointer_record PointerRecord to reset.
    */
-  CHAISHAREDDLL_API void resetTouch(PointerRecord* pointer_record);
+  void resetTouch(PointerRecord* pointer_record);
 
   /*!
    * \brief Find the PointerRecord corresponding to the raw pointer.
@@ -292,55 +226,26 @@ public:
    * \return PointerRecord containing the raw pointer, or an empty
    *         PointerRecord if none found.
    */
-  CHAISHAREDDLL_API PointerRecord* getPointerRecord(void* pointer);
-
-  /*!
-   * \brief Create a copy of the given PointerRecord with a new allocation
-   *  in the active space.
-   *
-   * \param record The PointerRecord to copy.
-   *
-   * \return A copy of the given PointerRecord, must be free'd with delete.
-   */
-  CHAISHAREDDLL_API PointerRecord* deepCopyRecord(PointerRecord const* record);
+  PointerRecord* getPointerRecord(void* pointer);
 
   /*!
    * \brief Create a copy of the pointer map.
    *
    * \return A copy of the pointer map. Can be used to find memory leaks.
    */
-  CHAISHAREDDLL_API std::unordered_map<void*, const PointerRecord*> getPointerMap() const;
-
-  /*!
-   * \brief Get the total number of arrays registered with the array manager.
-   *
-   * \return The total number of arrays registered with the array manager.
-   */
-  CHAISHAREDDLL_API size_t getTotalNumArrays() const;
-
-  /*!
-   * \brief Get the total amount of memory allocated.
-   *
-   * \return The total amount of memory allocated.
-   */
-  CHAISHAREDDLL_API size_t getTotalSize() const;
-
-  /*!
-   * \brief Calls callbacks of pointers still in the map with ACTION_LEAKED.
-   */
-  CHAISHAREDDLL_API void reportLeaks() const;
+  std::unordered_map<void*, const PointerRecord*> getPointerMap() const;
 
   /*!
    * \brief Get the allocator ID
    *
    * \return The allocator ID.
    */
-  CHAISHAREDDLL_API int getAllocatorId(ExecutionSpace space) const;
+  int getAllocatorId(ExecutionSpace space) const;
 
   /*!
    * \brief Wraps our resource manager's copy.
    */
-  CHAISHAREDDLL_API void copy(void * dst, void * src, size_t size); 
+  void copy(void * dst, void * src, size_t size); 
   
   /*!
    * \brief Registering an allocation with the ArrayManager
@@ -349,7 +254,7 @@ public:
    * \param space Space in which the pointer was allocated.
    * \param owned Should the allocation be free'd by CHAI?
    */
-  CHAISHAREDDLL_API void registerPointer(PointerRecord* record,
+  void registerPointer(PointerRecord* record,
                                          ExecutionSpace space,
                                          bool owned = true);
 
@@ -359,14 +264,7 @@ public:
    * \param record PointerRecord of allocation to deregister.
    * \param deregisterFromUmpire If true, deregister from umpire as well.
    */
-  CHAISHAREDDLL_API void deregisterPointer(PointerRecord* record, bool deregisterFromUmpire=false);
-
-  /*!
-   * \brief Returns the front of the allocation associated with this pointer, nullptr if allocation not found.
-   *
-   * \param pointer Pointer to address of that we want the front of the allocation for.
-   */
-  CHAISHAREDDLL_API void * frontOfAllocation(void * pointer);
+  void deregisterPointer(PointerRecord* record, bool deregisterFromUmpire=false);
 
   /*!
    * \brief set the allocator for an execution space.
@@ -385,30 +283,20 @@ public:
    */
   umpire::Allocator getAllocator(ExecutionSpace space);
   
- /*!
-   * \brief Turn callbacks on.
-   */
-  void enableCallbacks() { m_callbacks_active = true; }
-
-  /*!
-   * \brief Turn callbacks off.
-   */
-  void disableCallbacks() { m_callbacks_active = false; }
-
   /*!
    * \brief synchronize the device if there hasn't been a synchronize since the last kernel
    */
-  CHAISHAREDDLL_API bool syncIfNeeded();
+  bool syncIfNeeded();
 
-  /*!
-   * \brief Evicts the data in the given space.
-   *
-   * \param space Execution space to evict.
-   * \param destinationSpace The execution space to move the data to.
-   *                            Must not equal space or NONE.
-   */
-  CHAISHAREDDLL_API void evict(ExecutionSpace space, ExecutionSpace destinationSpace);
-
+  static const char * h_umpire_name;
+  static const char * d_umpire_name;
+  static const char * um_umpire_name;
+  static const char * GetUmpireHostAllocatorName() { return h_umpire_name; }
+  static void SetUmpireHostAllocatorName(const char * h_name) { h_umpire_name = h_name; }
+  static const char * GetUmpireDeviceAllocatorName() { return d_umpire_name; }
+  static void SetUmpireDeviceAllocatorName(const char * d_name) { d_umpire_name = d_name; }
+  static const char * GetUmpireUMAllocatorName() { return um_umpire_name; }
+  static void SetUmpireUMAllocatorName(const char * h_name) { um_umpire_name = h_name; }
 
 protected:
   /*!
@@ -432,30 +320,6 @@ private:
    */
   void move(PointerRecord* record, ExecutionSpace space);
   
-    /*!
-   * \brief Execute a user callback if callbacks are active
-   *
-   * \param record The pointer record containing the callback
-   * \param action The event that occurred
-   * \param space The space in which the event occurred
-   * \param size The number of bytes in the array associated with this pointer record
-   */
-  inline void callback(const PointerRecord* record,
-                       Action action,
-                       ExecutionSpace space) const {
-     if (m_callbacks_active) {
-        // Callback for this ManagedArray only
-        if (record && record->m_user_callback) {
-           record->m_user_callback(record, action, space);
-        }
-
-        // Callback for all ManagedArrays
-        if (m_user_callback) {
-           m_user_callback(record, action, space);
-        }
-     }
-  }
-
   /*!
    * Current execution space.
    */
@@ -475,7 +339,7 @@ private:
    *
    * \brief Array of umpire::Allocators, indexed by ExecutionSpace.
    */
-  umpire::Allocator* m_allocators[NUM_EXECUTION_SPACES];
+  UmpireMemorySpace* m_allocators[NUM_EXECUTION_SPACES];
 
   /*!
    * \brief The umpire resource manager.
@@ -488,28 +352,11 @@ private:
   mutable std::mutex m_mutex;
 
   /*!
-   * \brief A callback triggered upon memory operations on all ManagedArrays.
-   */
-  UserCallback m_user_callback;
-
-  /*!
-   * \brief Controls whether or not callbacks are called.
-   */
-  bool m_callbacks_active;
-
-  /*!
    * Whether or not a synchronize has been performed since the launch of the last
    * GPU context
    */
   static thread_local bool m_synced_since_last_kernel;
 
-#if defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
-  /*!
-   * Used by the RAJA plugin to determine whether the execution space should be
-   * CPU or GPU.
-   */
-  bool m_gpu_sim_mode = false;
-#endif
 };
 
 }  // end of namespace chai

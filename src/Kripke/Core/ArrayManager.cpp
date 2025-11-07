@@ -1,18 +1,13 @@
-//////////////////////////////////////////////////////////////////////////////
-// Copyright (c) 2016-24, Lawrence Livermore National Security, LLC and CHAI
-// project contributors. See the CHAI LICENSE file for details.
 //
-// SPDX-License-Identifier: BSD-3-Clause
-//////////////////////////////////////////////////////////////////////////////
+// Copyright (c) 2014-25, Lawrence Livermore National Security, LLC
+// and Kripke project contributors. See the Kripke/COPYRIGHT file for details.
+//
+// SPDX-License-Identifier: (BSD-3-Clause)
+//
+  
 #include "chai/ArrayManager.hpp"
 
 #include "chai/config.hpp"
-
-#if defined(CHAI_ENABLE_CUDA)
-#if !defined(CHAI_THIN_GPU_ALLOCATE)
-#include "cuda_runtime_api.h"
-#endif
-#endif
 
 #include "umpire/ResourceManager.hpp"
 
@@ -32,44 +27,24 @@ ArrayManager* ArrayManager::getInstance()
 ArrayManager::ArrayManager() :
   m_pointer_map{},
   m_allocators{},
-  m_resource_manager{umpire::ResourceManager::getInstance()},
-  m_callbacks_active{true}
+  m_resource_manager{umpire::ResourceManager::getInstance()}
 {
   m_pointer_map.clear();
-  m_current_execution_space = NONE;
-  m_default_allocation_space = CPU;
+  m_current_execution_space = HOST;
+  m_default_allocation_space = HOST;
 
-  m_allocators[CPU] =
-      new umpire::Allocator(m_resource_manager.getAllocator("HOST"));
+  m_allocators[CPU] = new UmpireMemorySpace(ArrayManager::GetUmpireHostAllocatorName(), "HOST");
 
-#if defined(CHAI_ENABLE_CUDA) || defined(CHAI_ENABLE_HIP) || defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
-#if defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
-  m_allocators[GPU] =
-      new umpire::Allocator(m_resource_manager.getAllocator("HOST"));
-#else
-  m_allocators[GPU] =
-      new umpire::Allocator(m_resource_manager.getAllocator("DEVICE"));
-#endif
+#if defined(KRIPKE_ENABLE_CUDA) || defined(KRIPKE_ENABLE_HIP)
+  m_allocators[GPU] = new UmpireMemorySpace(ArrayManager::GetUmpireDeviceAllocatorName(), "DEVICE");
 #endif
 
-#if defined(CHAI_ENABLE_UM)
-#if defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
-  m_allocators[UM] =
-      new umpire::Allocator(m_resource_manager.getAllocator("HOST"));
-#else
-  m_allocators[UM] =
-      new umpire::Allocator(m_resource_manager.getAllocator("UM"));
-#endif
+#if defined(KRIPKE_ENABLE_UM)
+  m_allocators[UM] = new UmpireMemorySpace(ArrayManager::GetUmpireUMAllocatorName(), "UM");
 #endif
 
-#if defined(CHAI_ENABLE_PINNED)
-#if (defined(CHAI_ENABLE_CUDA) || defined(CHAI_ENABLE_HIP)) && !defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
-    m_allocators[PINNED] =
-             new umpire::Allocator(m_resource_manager.getAllocator("PINNED"));
-#else
-  m_allocators[PINNED] =
-      new umpire::Allocator(m_resource_manager.getAllocator("HOST"));
-#endif
+#if defined(KRIPKE_ENABLE_MI300_UNIFIEDMEMORY)
+  m_allocators[GPUONLY] = new UmpireMemorySpace(ArrayManager::GetUmpireDeviceAllocatorName(), "DEVICE");
 #endif
 }
 
@@ -81,23 +56,13 @@ void ArrayManager::registerPointer(
   std::lock_guard<std::mutex> lock(m_mutex);
   auto pointer = record->m_pointers[space];
 
-  // if we are registering a new pointer record for a pointer where there is already
-  // a pointer record, we assume the old record was somehow abandoned by the host
-  // application and trigger an ACTION_FOUND_ABANDONED callback
   auto found_pointer_record_pair = m_pointer_map.find(pointer);
   if (found_pointer_record_pair != m_pointer_map.end()) {
      PointerRecord ** found_pointer_record_addr = found_pointer_record_pair->second;
      if (found_pointer_record_addr != nullptr) {
 
         PointerRecord *foundRecord = *found_pointer_record_addr;
-        // if it's actually the same pointer record, then we're OK. If it's a different
-        // one, delete the old one.
         if (foundRecord != record) {
-           CHAI_LOG(Warning, "ArrayManager::registerPointer found a record for " <<
-                      pointer << " already there.  Deleting abandoned pointer record.");
-
-           callback(foundRecord, ACTION_FOUND_ABANDONED, space);
-
            for (int fspace = CPU; fspace < NUM_EXECUTION_SPACES; ++fspace) {
               foundRecord->m_pointers[fspace] = nullptr;
            }
@@ -106,8 +71,6 @@ void ArrayManager::registerPointer(
         }
      }
   }
-
-  CHAI_LOG(Debug, "Registering " << pointer << " in space " << space);
 
   m_pointer_map.insert(pointer, record);
 
@@ -135,36 +98,6 @@ void ArrayManager::registerPointer(
   }
 }
 
-void ArrayManager::deregisterPointer(PointerRecord* record, bool deregisterFromUmpire)
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  for (int i = 0; i < NUM_EXECUTION_SPACES; i++) {
-    void * pointer = record->m_pointers[i];
-    if (pointer) {
-       if (deregisterFromUmpire) {
-          m_resource_manager.deregisterAllocation(pointer);
-       }
-       CHAI_LOG(Debug, "De-registering " << pointer);
-       m_pointer_map.erase(pointer);
-    }
-  }
-  if (record != &s_null_record) {
-     delete record;
-  }
-}
-
-void * ArrayManager::frontOfAllocation(void * pointer) {
-  if (pointer) {
-    if (m_resource_manager.hasAllocator(pointer)) {
-       auto allocation_record = m_resource_manager.findAllocationRecord(pointer);
-       if (allocation_record) {
-         return allocation_record->ptr;
-       }
-    }
-  }
-  return nullptr;
-}
-
 void ArrayManager::setExecutionSpace(ExecutionSpace space)
 {
 #if defined(CHAI_ENABLE_GPU_SIMULATION_MODE)
@@ -172,8 +105,6 @@ void ArrayManager::setExecutionSpace(ExecutionSpace space)
       space = chai::GPU;
    }
 #endif
-
-  CHAI_LOG(Debug, "Setting execution space to " << space);
 
   if (chai::GPU == space) {
     m_synced_since_last_kernel = false;
@@ -220,9 +151,7 @@ void ArrayManager::registerTouch(PointerRecord* pointer_record,
                                  ExecutionSpace space)
 {
   if (pointer_record && pointer_record != &s_null_record) {
-
      if (space != NONE) {
-       CHAI_LOG(Debug, pointer_record->m_pointers[space] << " touched in space " << space);
        pointer_record->m_touched[space] = true;
        pointer_record->m_last_space = space;
      }
@@ -273,8 +202,6 @@ void ArrayManager::move(PointerRecord* record, ExecutionSpace space)
     return;
   }
 
-  callback(record, ACTION_CAPTURED, space);
-
   if (space == record->m_last_space) {
     return;
   }
@@ -285,11 +212,8 @@ void ArrayManager::move(PointerRecord* record, ExecutionSpace space)
   }
 #endif
 
-#if defined(CHAI_ENABLE_PINNED)
-  if (record->m_last_space == PINNED) {
-    if (space == CPU) {
-      syncIfNeeded();
-    }
+#if defined(KRIPKE_ENABLE_MI300_UNIFIEDMEMORY)
+  if (record->m_last_space == GPUONLY) {
     return;
   }
 #endif
@@ -313,7 +237,6 @@ void ArrayManager::move(PointerRecord* record, ExecutionSpace space)
       chai::copy(dst_pointer, src_pointer, m_resource_manager, space, prev_space);
     }
 
-    callback(record, ACTION_MOVE, space);
   }
 
   resetTouch(record);
@@ -321,16 +244,13 @@ void ArrayManager::move(PointerRecord* record, ExecutionSpace space)
 
 void ArrayManager::allocate(
     PointerRecord* pointer_record,
-           ExecutionSpace space)
+    ExecutionSpace space)
 {
   auto size = pointer_record->m_size;
   auto alloc = m_resource_manager.getAllocator(pointer_record->m_allocators[space]);
 
   pointer_record->m_pointers[space] = alloc.allocate(size);
-  callback(pointer_record, ACTION_ALLOC, space);
   registerPointer(pointer_record, space);
-
-  CHAI_LOG(Debug, "Allocated array at: " << pointer_record->m_pointers[space]);
 }
 
 void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFree)
@@ -344,9 +264,6 @@ void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFre
         if (pointer_record->m_owned[space]) {
 #if defined(CHAI_ENABLE_UM)
           if (space_ptr == pointer_record->m_pointers[UM]) {
-            callback(pointer_record,
-                     ACTION_FREE,
-                     ExecutionSpace(UM));
 
             auto alloc = m_resource_manager.getAllocator(pointer_record->m_allocators[UM]);
             alloc.deallocate(space_ptr);
@@ -360,9 +277,6 @@ void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFre
 #endif
 #if defined(CHAI_ENABLE_PINNED)
           if (space_ptr == pointer_record->m_pointers[PINNED]) {
-            callback(pointer_record,
-                     ACTION_FREE,
-                     ExecutionSpace(PINNED));
 
             auto alloc = m_resource_manager.getAllocator(
                 pointer_record->m_allocators[PINNED]);
@@ -376,9 +290,6 @@ void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFre
           } else
 #endif
           {
-            callback(pointer_record,
-                     ACTION_FREE,
-                     ExecutionSpace(space));
 
             auto alloc = m_resource_manager.getAllocator(
                 pointer_record->m_allocators[space]);
@@ -392,7 +303,6 @@ void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFre
           m_resource_manager.deregisterAllocation(space_ptr);
         }
         {
-          CHAI_LOG(Debug, "DeRegistering " << space_ptr);
           std::lock_guard<std::mutex> lock(m_mutex);
           m_pointer_map.erase(space_ptr);
         }
@@ -405,13 +315,6 @@ void ArrayManager::free(PointerRecord* pointer_record, ExecutionSpace spaceToFre
   }
 }
 
-size_t ArrayManager::getSize(void* ptr)
-{
-  // TODO
-  auto pointer_record = getPointerRecord(ptr);
-  return pointer_record->m_size;
-}
-
 void ArrayManager::setDefaultAllocationSpace(ExecutionSpace space)
 {
   m_default_allocation_space = space;
@@ -420,19 +323,6 @@ void ArrayManager::setDefaultAllocationSpace(ExecutionSpace space)
 ExecutionSpace ArrayManager::getDefaultAllocationSpace()
 {
   return m_default_allocation_space;
-}
-
-
-void ArrayManager::setUserCallback(void* pointer, UserCallback const& f)
-{
-  // TODO ??
-  auto pointer_record = getPointerRecord(pointer);
-  pointer_record->m_user_callback = f;
-}
-
-void ArrayManager::setGlobalUserCallback(UserCallback const& f)
-{
-  m_user_callback = f;
 }
 
 PointerRecord* ArrayManager::getPointerRecord(void* pointer)
@@ -453,37 +343,6 @@ ArrayManager::getPointerMap() const
   }
 
   return mapCopy;
-}
-
-size_t ArrayManager::getTotalNumArrays() const { return m_pointer_map.size(); }
-
-// TODO: Investigate counting memory allocated in each execution space if
-// possible
-size_t ArrayManager::getTotalSize() const
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  size_t total = 0;
-
-  for (const auto& entry : m_pointer_map) {
-    total += (*entry.second)->m_size;
-  }
-
-  return total;
-}
-
-void ArrayManager::reportLeaks() const
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  for (const auto& entry : m_pointer_map) {
-    const void* pointer = entry.first;
-    const PointerRecord* record = *entry.second;
-
-    for (int s = CPU; s < NUM_EXECUTION_SPACES; ++s) {
-      if (pointer == record->m_pointers[s]) {
-        callback(record, ACTION_LEAKED, ExecutionSpace(s));
-      }
-    }
-  }
 }
 
 int

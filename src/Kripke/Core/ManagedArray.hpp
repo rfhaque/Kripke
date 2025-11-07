@@ -60,12 +60,9 @@ public:
    *
    * \param elems Number of elements to allocate.
    * \param space Execution space in which to allocate data.
-   * \param cback User defined callback for memory events (alloc, free, move)
    */
   void allocate(size_t elems,
-                          ExecutionSpace space = CPU,
-                          UserCallback const& cback =
-                          [] (const PointerRecord*, Action, ExecutionSpace) {});
+                ExecutionSpace space = CPU);
 
   /*!
    * \brief Free all data allocated by this ManagedArray.
@@ -98,37 +95,14 @@ public:
 
   ManagedArray<T>& operator=(ManagedArray const & other) = default;
 
-  ManagedArray<T>& operator=(ManagedArray && other);
-
   bool operator==(const ManagedArray<T>& rhs) const;
   bool operator!=(const ManagedArray<T>& from) const;
-
-#ifndef CHAI_DISABLE_RM
-  /*!
-   * \brief Assign a user-defined callback triggerd upon memory migration.
-   *
-   * The callback is a function of the form
-   *
-   *   void callback(chai::ExecutionSpace moved_to, size_t num_bytes)
-   *
-   * Where moved_to is the execution space that the data was moved to, and
-   * num_bytes is the number of bytes moved.
-   *
-   */
-  void setUserCallback(UserCallback const& cback)
-  {
-    if (m_pointer_record && m_pointer_record != &ArrayManager::s_null_record) {
-      m_pointer_record->m_user_callback = cback;
-    }
-  }
-#endif
 
 protected:
   /*!
    * Currently active data pointer.
    */
   mutable T* m_active_pointer = nullptr;
-  mutable T* m_active_base_pointer = nullptr;
 
   /*!
    * Pointer to ArrayManager instance.
@@ -139,15 +113,11 @@ protected:
    * Number of elements in the ManagedArray.
    */
   mutable size_t m_size = 0;
-  mutable size_t m_offset = 0;
 
   /*!
    * Pointer to PointerRecord data.
    */
   mutable PointerRecord* m_pointer_record = nullptr;
-
-  mutable bool m_is_slice = false;
-};
 
 }  // end of namespace chai
 
