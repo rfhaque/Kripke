@@ -35,10 +35,10 @@ struct LPlusTimesSdom {
     auto sdom_al = getSdomAL(al, sdom_id);
 
     // Get dimensioning
-    int num_directions = set_dir.size(sdom_id);
-    int num_groups =     set_group.size(sdom_id);
-    int num_moments =    set_moment.size(sdom_id);
-    int num_zones =      set_zone.size(sdom_id);
+    RAJA::Index_type num_directions = Kripke::checkedIndexSize(set_dir.size(sdom_id), "direction");
+    RAJA::Index_type num_groups =     Kripke::checkedIndexSize(set_group.size(sdom_id), "group");
+    RAJA::Index_type num_moments =    Kripke::checkedIndexSize(set_moment.size(sdom_id), "moment");
+    RAJA::Index_type num_zones =      Kripke::checkedIndexSize(set_zone.size(sdom_id), "zone");
 
     // Get views
     auto phi_out  = sdom_al.getView(field_phi_out);

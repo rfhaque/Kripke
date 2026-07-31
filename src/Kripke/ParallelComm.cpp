@@ -42,9 +42,10 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
                       Kripke::Core::FieldStorage<double> &src_plane,
                       Kripke::SdomId src_sdom_id)
 {
-  int num_elem = src_plane.size(src_sdom_id);
-  KRIPKE_ASSERT(dst_plane.size(dst_sdom_id) == (size_t)num_elem,
+  size_t src_size = src_plane.size(src_sdom_id);
+  KRIPKE_ASSERT(dst_plane.size(dst_sdom_id) == src_size,
       "Cannot copy plane data with different subdomain sizes");
+  RAJA::Index_type num_elem = Kripke::checkedIndexSize(src_size, "plane");
 
 #if defined(KRIPKE_USE_CHAI) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
   if(dst_plane.getAllocationSpace() == chai::GPU &&
@@ -68,7 +69,7 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
   // Fallback for non-CHAI and CHAI fields that are not both GPU-backed.
   double *dst = dst_plane.getHostData(dst_sdom_id);
   double const *src = src_plane.getHostDataConst(src_sdom_id);
-  for(int i = 0;i < num_elem;++ i){
+  for(RAJA::Index_type i = 0;i < num_elem;++ i){
     dst[i] = src[i];
   }
 }
@@ -158,7 +159,7 @@ void ParallelComm::postRecvs(Kripke::Core::DataStore &data_store, SdomId sdom_id
     recv_dimensions.push_back(*dim);
 
     auto &plane_data = *m_plane_data[*dim];
-    size_t plane_data_size = plane_data.size(sdom_id);
+    int plane_data_size = Kripke::checkedIntSize(plane_data.size(sdom_id), "MPI receive plane");
     double *plane_data_ptr = nullptr;
 
     if(useGpuAwareMPI(plane_data)){
@@ -235,7 +236,7 @@ void ParallelComm::postSends(Kripke::Core::DataStore &data_store, Kripke::SdomId
 
     // Get size of outgoing boudnary data
     auto &src_plane = *src_plane_data[*dim];
-    size_t plane_data_size = src_plane.size(sdom_id);
+    int plane_data_size = Kripke::checkedIntSize(src_plane.size(sdom_id), "MPI send plane");
     double *src_buffer = nullptr;
 
     if(useGpuAwareMPI(src_plane)){
@@ -273,7 +274,7 @@ bool ParallelComm::workRemaining(void){
 void ParallelComm::waitAllSends(void){
 #ifdef KRIPKE_USE_MPI
   // Wait for all remaining sends to complete, then return false
-  int num_sends = send_requests.size();
+  int num_sends = Kripke::checkedIntSize(send_requests.size(), "MPI send request count");
   if(num_sends > 0){
     std::vector<MPI_Status> status(num_sends);
     MPI_Waitall(num_sends, &send_requests[0], &status[0]);
@@ -288,7 +289,7 @@ void ParallelComm::waitAllSends(void){
 void ParallelComm::testRecieves(void){
 #ifdef KRIPKE_USE_MPI
   // Check for any recv requests that have completed
-  int num_requests = recv_requests.size();
+  int num_requests = Kripke::checkedIntSize(recv_requests.size(), "MPI receive request count");
   bool done = false;
   while(!done && num_requests > 0){
     // Create array of status variables

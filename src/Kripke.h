@@ -17,6 +17,7 @@
 #include <vector>
 #include <stdio.h>
 #include <cmath>
+#include <limits>
 #include <strings.h>
 #include <stdlib.h>
 
@@ -56,6 +57,37 @@ struct Grid_Data;
 #define KRIPKE_LAMBDA [=] RAJA_HOST_DEVICE
 
 namespace Kripke {
+
+  inline RAJA::Index_type checkedIndexSize(size_t value, char const *name){
+    constexpr auto max_index = std::numeric_limits<RAJA::Index_type>::max();
+    KRIPKE_ASSERT(value <= static_cast<size_t>(max_index),
+      "%s size %lu exceeds RAJA::Index_type max %lu\n",
+      name,
+      (unsigned long)value,
+      (unsigned long)max_index);
+    return static_cast<RAJA::Index_type>(value);
+  }
+
+  inline int checkedIntSize(size_t value, char const *name){
+    constexpr auto max_int = std::numeric_limits<int>::max();
+    KRIPKE_ASSERT(value <= static_cast<size_t>(max_int),
+      "%s size %lu exceeds int max %lu\n",
+      name,
+      (unsigned long)value,
+      (unsigned long)max_int);
+    return static_cast<int>(value);
+  }
+
+  inline RAJA::Index_type checkedIndexProduct(size_t lhs, size_t rhs, char const *name){
+    constexpr auto max_index = std::numeric_limits<RAJA::Index_type>::max();
+    KRIPKE_ASSERT(rhs == 0 || lhs <= static_cast<size_t>(max_index) / rhs,
+      "%s size product %lu * %lu exceeds RAJA::Index_type max %lu\n",
+      name,
+      (unsigned long)lhs,
+      (unsigned long)rhs,
+      (unsigned long)max_index);
+    return static_cast<RAJA::Index_type>(lhs * rhs);
+  }
 
   /**
    * Index used to specify a local subdomain
@@ -160,4 +192,3 @@ namespace Arch {
 
 
 #endif
-

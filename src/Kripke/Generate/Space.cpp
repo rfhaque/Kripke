@@ -275,8 +275,10 @@ void Kripke::Generate::generateSpace(Kripke::Core::DataStore &data_store,
   for(size_t i = 0;i < sdom_list.size();++ i){
     SdomId sdom_id = sdom_list[i];
 
-    int num_zones = set_zone.size(sdom_id);
-    int num_mixelems = set_mixelem.size(sdom_id);
+    RAJA::Index_type num_zones =
+        Kripke::checkedIndexSize(set_zone.size(sdom_id), "zone");
+    RAJA::Index_type num_mixelems =
+        Kripke::checkedIndexSize(set_mixelem.size(sdom_id), "mix element");
 
     auto const &sdom_mix = mix[i];
 
@@ -340,9 +342,14 @@ void Kripke::Generate::generateSpace(Kripke::Core::DataStore &data_store,
 
   for(SdomId sdom_id : field_sigt.getWorkList()){
 
-    int num_groups  = set_group.size(sdom_id);
-    int num_zones = set_zone_linear.size(sdom_id);
-    int num_mixelem = set_mixelem.size(sdom_id);
+    size_t num_groups_size = set_group.size(sdom_id);
+    size_t num_zones_size = set_zone_linear.size(sdom_id);
+    RAJA::Index_type num_groups =
+        Kripke::checkedIndexSize(num_groups_size, "group");
+    RAJA::Index_type num_zones =
+        Kripke::checkedIndexSize(num_zones_size, "zone");
+    RAJA::Index_type num_mixelem =
+        Kripke::checkedIndexSize(set_mixelem.size(sdom_id), "mix element");
 
 #if defined(KRIPKE_USE_CHAI) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
     if(field_sigt.getAllocationSpace() == chai::GPU){
@@ -355,7 +362,8 @@ void Kripke::Generate::generateSpace(Kripke::Core::DataStore &data_store,
       double sigt0 = input_vars.sigt[0];
       double sigt1 = input_vars.sigt[1];
       double sigt2 = input_vars.sigt[2];
-      int total = num_groups * num_zones;
+      RAJA::Index_type total =
+          Kripke::checkedIndexProduct(num_groups_size, num_zones_size, "group-zone");
 
 #if defined(KRIPKE_USE_CUDA)
       RAJA::forall<RAJA::cuda_exec<256>>(

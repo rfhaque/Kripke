@@ -38,9 +38,9 @@ struct PopulationSdom {
 
     auto sdom_al = getSdomAL(al, sdom_id);
 
-    int num_directions = set_dir.size(sdom_id);
-    int num_groups =     set_group.size(sdom_id);
-    int num_zones =      set_zone.size(sdom_id);
+    RAJA::Index_type num_directions = Kripke::checkedIndexSize(set_dir.size(sdom_id), "direction");
+    RAJA::Index_type num_groups =     Kripke::checkedIndexSize(set_group.size(sdom_id), "group");
+    RAJA::Index_type num_zones =      Kripke::checkedIndexSize(set_zone.size(sdom_id), "zone");
 
     auto psi    = sdom_al.getView(field_psi);
     auto w      = sdom_al.getView(field_w);
@@ -99,4 +99,3 @@ double Kripke::Kernel::population(Kripke::Core::DataStore &data_store)
   auto const &comm = data_store.getVariable<Kripke::Core::Comm>("comm");
   return comm.allReduceSumDouble(part);
 }
-

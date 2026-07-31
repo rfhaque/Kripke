@@ -65,10 +65,10 @@ struct ScatteringSdom {
     auto mixelem_to_fraction = sdom_al.getView(field_mixelem_to_fraction);
     
     // grab dimensions
-    int num_zones =      set_zone.size(sdom_src);
-    int num_groups_src = set_group.size(sdom_src);
-    int num_groups_dst = set_group.size(sdom_dst);
-    int num_moments =    set_moment.size(sdom_dst);
+    RAJA::Index_type num_zones =      Kripke::checkedIndexSize(set_zone.size(sdom_src), "zone");
+    RAJA::Index_type num_groups_src = Kripke::checkedIndexSize(set_group.size(sdom_src), "source group");
+    RAJA::Index_type num_groups_dst = Kripke::checkedIndexSize(set_group.size(sdom_dst), "destination group");
+    RAJA::Index_type num_moments =    Kripke::checkedIndexSize(set_moment.size(sdom_dst), "moment");
 
     RAJA::kernel<ExecPolicy>(
         camp::make_tuple(
@@ -162,5 +162,4 @@ void Kripke::Kernel::scattering(Kripke::Core::DataStore &data_store)
 
 
 }
-
 

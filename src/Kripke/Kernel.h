@@ -38,7 +38,7 @@ namespace Kripke {
       RAJA_INLINE
       void kConstDevice(FieldType &field, Kripke::SdomId sdom_id, typename FieldType::ElementType value){
         auto ptr = field.getDeviceData(sdom_id);
-        int num_elem = field.size(sdom_id);
+        RAJA::Index_type num_elem = Kripke::checkedIndexSize(field.size(sdom_id), "field");
 
 #if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
 #if defined(KRIPKE_USE_CUDA)
@@ -62,7 +62,7 @@ namespace Kripke {
       RAJA_INLINE
       void kConstHost(FieldType &field, Kripke::SdomId sdom_id, typename FieldType::ElementType value){
         auto ptr = field.getHostData(sdom_id);
-        int num_elem = field.size(sdom_id);
+        RAJA::Index_type num_elem = Kripke::checkedIndexSize(field.size(sdom_id), "field");
 
         RAJA::forall<RAJA::seq_exec>(
           RAJA::RangeSegment(0, num_elem),
@@ -77,7 +77,7 @@ namespace Kripke {
                        FieldType &field_src, Kripke::SdomId sdom_id_src){
         auto src = field_src.getDeviceData(sdom_id_src);
         auto dst = field_dst.getDeviceData(sdom_id_dst);
-        int num_elem = field_src.size(sdom_id_src);
+        RAJA::Index_type num_elem = Kripke::checkedIndexSize(field_src.size(sdom_id_src), "source field");
 
 #if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
 #if defined(KRIPKE_USE_CUDA)
@@ -104,7 +104,7 @@ namespace Kripke {
                      FieldType &field_src, Kripke::SdomId sdom_id_src){
         auto src = field_src.getHostDataConst(sdom_id_src);
         auto dst = field_dst.getHostData(sdom_id_dst);
-        int num_elem = field_src.size(sdom_id_src);
+        RAJA::Index_type num_elem = Kripke::checkedIndexSize(field_src.size(sdom_id_src), "source field");
 
         RAJA::forall<RAJA::seq_exec>(
           RAJA::RangeSegment(0, num_elem),

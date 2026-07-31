@@ -51,8 +51,8 @@ struct SourceSdom {
     auto mixelem_to_material = sdom_al.getView(field_mixed_to_material);
     auto mixelem_to_fraction = sdom_al.getView(field_mixed_to_fraction);
 
-    int num_mixed  = set_mixelem.size(sdom_id);
-    int num_groups = set_group.size(sdom_id);
+    RAJA::Index_type num_mixed  = Kripke::checkedIndexSize(set_mixelem.size(sdom_id), "mix element");
+    RAJA::Index_type num_groups = Kripke::checkedIndexSize(set_group.size(sdom_id), "group");
 
 
     // Compute:  phi_out = phi_out + source * fraction

@@ -86,7 +86,8 @@ void Kripke::Generate::generateData(Kripke::Core::DataStore &data_store,
   // Assign basic diagonal data to matrix
   for(auto sdom_id : field_sigs.getWorkList()){
 
-    int global_num_groups = global_group_set.size(sdom_id);
+    RAJA::Index_type global_num_groups =
+        Kripke::checkedIndexSize(global_group_set.size(sdom_id), "global group");
 
 #if defined(KRIPKE_USE_CHAI) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
     if(field_sigs.getAllocationSpace() == chai::GPU){

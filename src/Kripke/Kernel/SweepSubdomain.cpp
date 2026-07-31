@@ -31,11 +31,16 @@ struct SweepSdom {
   
     auto sdom_al = getSdomAL(al, sdom_id);
 
-    int num_directions = data_store.getVariable<Set>("Set/Direction").size(sdom_id);
-    int num_groups = data_store.getVariable<Set>("Set/Group").size(sdom_id);
-    int local_imax = data_store.getVariable<Set>("Set/ZoneI").size(sdom_id);
-    int local_jmax = data_store.getVariable<Set>("Set/ZoneJ").size(sdom_id);
-    int local_kmax = data_store.getVariable<Set>("Set/ZoneK").size(sdom_id);
+    RAJA::Index_type num_directions =
+        Kripke::checkedIndexSize(data_store.getVariable<Set>("Set/Direction").size(sdom_id), "direction");
+    RAJA::Index_type num_groups =
+        Kripke::checkedIndexSize(data_store.getVariable<Set>("Set/Group").size(sdom_id), "group");
+    RAJA::Index_type local_imax =
+        Kripke::checkedIndexSize(data_store.getVariable<Set>("Set/ZoneI").size(sdom_id), "zone i");
+    RAJA::Index_type local_jmax =
+        Kripke::checkedIndexSize(data_store.getVariable<Set>("Set/ZoneJ").size(sdom_id), "zone j");
+    RAJA::Index_type local_kmax =
+        Kripke::checkedIndexSize(data_store.getVariable<Set>("Set/ZoneK").size(sdom_id), "zone k");
 
     auto xcos = sdom_al.getView(data_store.getVariable<Field_Direction2Double>("quadrature/xcos"));
     auto ycos = sdom_al.getView(data_store.getVariable<Field_Direction2Double>("quadrature/ycos"));
