@@ -162,6 +162,7 @@ void ParallelComm::postRecvs(Kripke::Core::DataStore &data_store, SdomId sdom_id
     double *plane_data_ptr = nullptr;
 
     if(useGpuAwareMPI(plane_data)){
+      synchronizeDeviceForMPI();
       plane_data_ptr = plane_data.getDeviceData(sdom_id);
     }
     else{
