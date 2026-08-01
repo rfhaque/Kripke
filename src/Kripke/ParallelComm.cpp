@@ -307,6 +307,7 @@ void ParallelComm::testRecieves(void){
 
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
       if(useGpuAwareMPI(*m_plane_data[recv_dimensions[index]])){
+        synchronizeDeviceForMPI();
         m_plane_data[recv_dimensions[index]]->registerDeviceTouch(SdomId{sdom_id});
       }
 #endif

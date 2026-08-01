@@ -31,6 +31,18 @@ ParallelComm(data_store), posted_sends(false)
   createField<Field_IPlane>(data_store, "old_i_plane", al_v, set_iplane);
   createField<Field_JPlane>(data_store, "old_j_plane", al_v, set_jplane);
   createField<Field_KPlane>(data_store, "old_k_plane", al_v, set_kplane);
+
+  auto &i_plane = m_data_store->getVariable<Field_IPlane>("i_plane");
+  auto &old_i_plane = m_data_store->getVariable<Field_IPlane>("old_i_plane");
+  Kernel::kCopy(old_i_plane, i_plane);
+
+  auto &j_plane = m_data_store->getVariable<Field_JPlane>("j_plane");
+  auto &old_j_plane = m_data_store->getVariable<Field_JPlane>("old_j_plane");
+  Kernel::kCopy(old_j_plane, j_plane);
+
+  auto &k_plane = m_data_store->getVariable<Field_KPlane>("k_plane");
+  auto &old_k_plane = m_data_store->getVariable<Field_KPlane>("old_k_plane");
+  Kernel::kCopy(old_k_plane, k_plane);
 }
 
 BlockJacobiComm::~BlockJacobiComm(){
@@ -44,19 +56,6 @@ BlockJacobiComm::~BlockJacobiComm(){
   Determines if upwind dependencies require communication, and posts appropirate Irecv's.
 */
 void BlockJacobiComm::addSubdomain(Kripke::Core::DataStore &data_store, SdomId sdom_id){
-
-  // Copy old flux data to send buffers
-  auto &i_plane = m_data_store->getVariable<Field_IPlane>("i_plane");
-  auto &old_i_plane = m_data_store->getVariable<Field_IPlane>("old_i_plane");
-  Kernel::kCopy(old_i_plane, i_plane);
-
-  auto &j_plane = m_data_store->getVariable<Field_JPlane>("j_plane");
-  auto &old_j_plane = m_data_store->getVariable<Field_JPlane>("old_j_plane");
-  Kernel::kCopy(old_j_plane, j_plane);
-
-  auto &k_plane = m_data_store->getVariable<Field_KPlane>("k_plane");
-  auto &old_k_plane = m_data_store->getVariable<Field_KPlane>("old_k_plane");
-  Kernel::kCopy(old_k_plane, k_plane);
 
   // post recieves
   postRecvs(data_store, sdom_id);
