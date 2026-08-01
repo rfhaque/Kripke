@@ -207,7 +207,7 @@ namespace detail {
 #else
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
         if(m_direct_umpire_device_storage){
-          return m_chunk_to_data[chunk_id].data(chai::GPU, false);
+          return m_chunk_to_data[chunk_id].data(chai::GPU);
         }
 #endif
 #if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
@@ -232,9 +232,6 @@ namespace detail {
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
       RAJA_INLINE
       void registerDeviceTouch(Kripke::SdomId sdom_id) {
-        if(m_direct_umpire_device_storage){
-          return;
-        }
         if(m_allocation_space == chai::GPU){
           KRIPKE_ASSERT(*sdom_id < (int)m_subdomain_to_chunk.size(),
               "sdom_id(%d) >= num_subdomains(%d)",
