@@ -56,11 +56,13 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
 #else
     using PlaneCopyExec = RAJA::hip_exec<256>;
 #endif
+    synchronizeDeviceForMPI();
     RAJA::forall<PlaneCopyExec>(
       RAJA::RangeSegment(0, num_elem),
       KRIPKE_LAMBDA (RAJA::Index_type i){
         dst[i] = src[i];
     });
+    synchronizeDeviceForMPI();
     return;
   }
 #endif  // #if defined(KRIPKE_USE_CHAI) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
@@ -214,6 +216,10 @@ void ParallelComm::postSends(Kripke::Core::DataStore &data_store, Kripke::SdomId
 
       SdomId sdom_id_downwind = global_to_sdom_id(downwind(dim));
 
+      // copy the boundary condition data into the downwind plane data
+      copyPlane(*m_plane_data[*dim], sdom_id_downwind,
+                *src_plane_data[*dim], sdom_id);
+
       // find the local subdomain in the queue, and decrement the counter
       for(size_t i = 0;i < queue_sdom_ids.size();++ i){
         if(queue_sdom_ids[i] == *sdom_id_downwind){
@@ -222,9 +228,6 @@ void ParallelComm::postSends(Kripke::Core::DataStore &data_store, Kripke::SdomId
         }
       }
 
-      // copy the boundary condition data into the downwind plane data
-      copyPlane(*m_plane_data[*dim], sdom_id_downwind,
-                *src_plane_data[*dim], sdom_id);
       continue;
     }
 
