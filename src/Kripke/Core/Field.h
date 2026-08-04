@@ -95,6 +95,9 @@ namespace detail {
         m_chunk_to_data.resize(num_chunks, nullptr);
 #else
         m_chunk_to_data.resize(num_chunks);
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+        m_chunk_to_direct_device_data.resize(num_chunks, nullptr);
+#endif
 #endif
 
         for(size_t chunk_id = 0;chunk_id < num_chunks;++ chunk_id){
@@ -110,15 +113,11 @@ namespace detail {
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
           // Used only for GPU-aware MPI i/j/k_plane buffers to avoid QuickPool non-base pointers.
           if(m_direct_umpire_device_storage){
-            auto &rm = umpire::ResourceManager::getInstance();
-            auto host_allocator = rm.getAllocator("HOST");
-            auto device_allocator = detail::directUmpireDeviceAllocator();
-
-            m_chunk_to_data[chunk_id] = ElementPtr(
-                sdom_size,
-                {chai::CPU, chai::GPU}, // which CHAI execution spaces are being overridden
-                {host_allocator, device_allocator}, // matching Umpire allocators for the overridden spaces {HOST, NamedAllocationStrategy}
-                chai::GPU); // initial allocation space
+            if(sdom_size > 0){
+              auto device_allocator = detail::directUmpireDeviceAllocator();
+              m_chunk_to_direct_device_data[chunk_id] =
+                  static_cast<ElementType *>(device_allocator.allocate(sdom_size * sizeof(ElementType)));
+            }
           }
           else
 #endif
@@ -133,6 +132,15 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         for(auto i : m_chunk_to_data){
           delete[] i;
+        }
+#elif defined(KRIPKE_USE_GPU_AWARE_MPI)
+        if(m_direct_umpire_device_storage){
+          auto device_allocator = detail::directUmpireDeviceAllocator();
+          for(auto ptr : m_chunk_to_direct_device_data){
+            if(ptr != nullptr){
+              device_allocator.deallocate(ptr);
+            }
+          }
         }
 #endif
       }
@@ -156,6 +164,10 @@ namespace detail {
         size_t chunk_id = m_subdomain_to_chunk[*sdom_id];
 
 #ifdef KRIPKE_USE_CHAI
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
+            "Direct Umpire device storage fields do not have host storage");
+#endif
         m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
         ElementPtr ptr = m_chunk_to_data[chunk_id];
@@ -175,6 +187,10 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         return  m_chunk_to_data[chunk_id];
 #else
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
+            "Direct Umpire device storage fields do not have host storage");
+#endif
         return m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
       }
@@ -190,6 +206,10 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         return  m_chunk_to_data[chunk_id];
 #else
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
+            "Direct Umpire device storage fields do not have host storage");
+#endif
         return m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
       }
@@ -207,7 +227,7 @@ namespace detail {
 #else
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
         if(m_direct_umpire_device_storage){
-          return m_chunk_to_data[chunk_id].data(chai::GPU, false);
+          return m_chunk_to_direct_device_data[chunk_id];
         }
 #endif
 #if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
@@ -261,6 +281,7 @@ namespace detail {
       chai::ExecutionSpace m_allocation_space;
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
       bool m_direct_umpire_device_storage;
+      std::vector<ElementType *> m_chunk_to_direct_device_data;
 #endif
 #endif
 		  };
@@ -364,6 +385,10 @@ namespace detail {
         size_t chunk_id = Parent::m_subdomain_to_chunk[*sdom_id];
 
 #ifdef KRIPKE_USE_CHAI
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+        KRIPKE_ASSERT(!Parent::m_direct_umpire_device_storage,
+            "Direct Umpire device storage fields do not have host storage");
+#endif
         Parent::m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
         auto ptr = Parent::m_chunk_to_data[chunk_id];
