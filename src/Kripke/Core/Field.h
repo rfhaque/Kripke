@@ -18,9 +18,8 @@
 #ifdef KRIPKE_USE_CHAI
 #include <chai/ManagedArray.hpp>
 #endif
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-#include <umpire/ResourceManager.hpp>
-#include <umpire/strategy/NamedAllocationStrategy.hpp>
+#if defined(KRIPKE_USE_GPU_AWARE_MPI) && defined(KRIPKE_USE_HIP)
+#include <hip/hip_runtime.h>
 #endif
 
 namespace Kripke {
@@ -34,17 +33,46 @@ namespace Core {
 
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
 namespace detail {
-  inline umpire::Allocator directUmpireDeviceAllocator()
+  template<typename ELEMENT>
+  inline ELEMENT *directHipDeviceMalloc(size_t num_elements)
   {
-    auto &rm = umpire::ResourceManager::getInstance();
-    char const *allocator_name = "KRIPKE_DEVICE_DIRECT";
-
-    if(!rm.isAllocator(allocator_name)){
-      return rm.makeAllocator<umpire::strategy::NamedAllocationStrategy>(
-          allocator_name, rm.getAllocator("DEVICE"));
+    if(num_elements == 0){
+      return nullptr;
     }
 
-    return rm.getAllocator(allocator_name);
+#ifdef KRIPKE_USE_HIP
+    ELEMENT *ptr = nullptr;
+    hipError_t status = hipMalloc(reinterpret_cast<void **>(&ptr),
+        num_elements * sizeof(ELEMENT));
+    if(status != hipSuccess){
+      KRIPKE_ABORT("hipMalloc failed for direct device field storage: %s\n",
+          hipGetErrorString(status));
+    }
+    return ptr;
+#else
+    (void)num_elements;
+    KRIPKE_ABORT("Direct device field storage uses hipMalloc and requires KRIPKE_USE_HIP\n");
+    return nullptr;
+#endif
+  }
+
+  template<typename ELEMENT>
+  inline void directHipDeviceFree(ELEMENT *ptr)
+  {
+    if(ptr == nullptr){
+      return;
+    }
+
+#ifdef KRIPKE_USE_HIP
+    hipError_t status = hipFree(ptr);
+    if(status != hipSuccess){
+      KRIPKE_ABORT("hipFree failed for direct device field storage: %s\n",
+          hipGetErrorString(status));
+    }
+#else
+    (void)ptr;
+    KRIPKE_ABORT("Direct device field storage uses hipFree and requires KRIPKE_USE_HIP\n");
+#endif
   }
 }
 #endif
@@ -113,11 +141,8 @@ namespace detail {
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
           // Used only for GPU-aware MPI i/j/k_plane buffers to avoid QuickPool non-base pointers.
           if(m_direct_umpire_device_storage){
-            if(sdom_size > 0){
-              auto device_allocator = detail::directUmpireDeviceAllocator();
-              m_chunk_to_direct_device_data[chunk_id] =
-                  static_cast<ElementType *>(device_allocator.allocate(sdom_size * sizeof(ElementType)));
-            }
+            m_chunk_to_direct_device_data[chunk_id] =
+                detail::directHipDeviceMalloc<ElementType>(sdom_size);
           }
           else
 #endif
@@ -135,11 +160,8 @@ namespace detail {
         }
 #elif defined(KRIPKE_USE_GPU_AWARE_MPI)
         if(m_direct_umpire_device_storage){
-          auto device_allocator = detail::directUmpireDeviceAllocator();
           for(auto ptr : m_chunk_to_direct_device_data){
-            if(ptr != nullptr){
-              device_allocator.deallocate(ptr);
-            }
+            detail::directHipDeviceFree(ptr);
           }
         }
 #endif

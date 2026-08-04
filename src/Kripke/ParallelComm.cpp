@@ -56,13 +56,13 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
 #else
     using PlaneCopyExec = RAJA::hip_exec<256>;
 #endif
-    //synchronizeDeviceForMPI();
+    synchronizeDeviceForMPI();
     RAJA::forall<PlaneCopyExec>(
       RAJA::RangeSegment(0, num_elem),
       KRIPKE_LAMBDA (RAJA::Index_type i){
         dst[i] = src[i];
     });
-    //synchronizeDeviceForMPI();
+    synchronizeDeviceForMPI();
     return;
   }
 #endif  // #if defined(KRIPKE_USE_CHAI) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
