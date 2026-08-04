@@ -33,9 +33,9 @@ namespace Kripke {
   using Field_Moments = Kripke::Core::Field<double, Moment, Group, Zone>;
 
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
-  using Field_IPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneJ, ZoneK>;
-  using Field_JPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneI, ZoneK>;
-  using Field_KPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneI, ZoneJ>;
+  using Field_IPlane = Kripke::Core::Field<double, Direction, Group, ZoneJ, ZoneK>;
+  using Field_JPlane = Kripke::Core::Field<double, Direction, Group, ZoneI, ZoneK>;
+  using Field_KPlane = Kripke::Core::Field<double, Direction, Group, ZoneI, ZoneJ>;
 #else
   using Field_IPlane = Kripke::Core::Field<double, Direction, Group, ZoneJ, ZoneK>;
   using Field_JPlane = Kripke::Core::Field<double, Direction, Group, ZoneI, ZoneK>;
