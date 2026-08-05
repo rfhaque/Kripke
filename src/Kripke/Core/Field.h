@@ -18,8 +18,9 @@
 #ifdef KRIPKE_USE_CHAI
 #include <chai/ManagedArray.hpp>
 #endif
-#if defined(KRIPKE_USE_GPU_AWARE_MPI) && defined(KRIPKE_USE_HIP)
-#include <hip/hip_runtime.h>
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+#include <umpire/ResourceManager.hpp>
+#include <umpire/strategy/NamedAllocationStrategy.hpp>
 #endif
 
 namespace Kripke {
@@ -33,46 +34,17 @@ namespace Core {
 
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
 namespace detail {
-  template<typename ELEMENT>
-  inline ELEMENT *directHipDeviceMalloc(size_t num_elements)
+  inline umpire::Allocator directUmpireDeviceAllocator()
   {
-    if(num_elements == 0){
-      return nullptr;
+    auto &rm = umpire::ResourceManager::getInstance();
+    char const *allocator_name = "KRIPKE_DEVICE_DIRECT";
+
+    if(!rm.isAllocator(allocator_name)){
+      return rm.makeAllocator<umpire::strategy::NamedAllocationStrategy>(
+          allocator_name, rm.getAllocator("DEVICE"));
     }
 
-#ifdef KRIPKE_USE_HIP
-    ELEMENT *ptr = nullptr;
-    hipError_t status = hipMalloc(reinterpret_cast<void **>(&ptr),
-        num_elements * sizeof(ELEMENT));
-    if(status != hipSuccess){
-      KRIPKE_ABORT("hipMalloc failed for direct device field storage: %s\n",
-          hipGetErrorString(status));
-    }
-    return ptr;
-#else
-    (void)num_elements;
-    KRIPKE_ABORT("Direct device field storage uses hipMalloc and requires KRIPKE_USE_HIP\n");
-    return nullptr;
-#endif
-  }
-
-  template<typename ELEMENT>
-  inline void directHipDeviceFree(ELEMENT *ptr)
-  {
-    if(ptr == nullptr){
-      return;
-    }
-
-#ifdef KRIPKE_USE_HIP
-    hipError_t status = hipFree(ptr);
-    if(status != hipSuccess){
-      KRIPKE_ABORT("hipFree failed for direct device field storage: %s\n",
-          hipGetErrorString(status));
-    }
-#else
-    (void)ptr;
-    KRIPKE_ABORT("Direct device field storage uses hipFree and requires KRIPKE_USE_HIP\n");
-#endif
+    return rm.getAllocator(allocator_name);
   }
 }
 #endif
@@ -123,9 +95,6 @@ namespace detail {
         m_chunk_to_data.resize(num_chunks, nullptr);
 #else
         m_chunk_to_data.resize(num_chunks);
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-        m_chunk_to_direct_device_data.resize(num_chunks, nullptr);
-#endif
 #endif
 
         for(size_t chunk_id = 0;chunk_id < num_chunks;++ chunk_id){
@@ -141,8 +110,15 @@ namespace detail {
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
           // Used only for GPU-aware MPI i/j/k_plane buffers to avoid QuickPool non-base pointers.
           if(m_direct_umpire_device_storage){
-            m_chunk_to_direct_device_data[chunk_id] =
-                detail::directHipDeviceMalloc<ElementType>(sdom_size);
+            auto &rm = umpire::ResourceManager::getInstance();
+            auto host_allocator = rm.getAllocator("HOST");
+            auto device_allocator = detail::directUmpireDeviceAllocator();
+
+            m_chunk_to_data[chunk_id] = ElementPtr(
+                sdom_size,
+                {chai::CPU, chai::GPU}, // which CHAI execution spaces are being overridden
+                {host_allocator, device_allocator}, // matching Umpire allocators for the overridden spaces {HOST, NamedAllocationStrategy}
+                chai::GPU); // initial allocation space
           }
           else
 #endif
@@ -157,12 +133,6 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         for(auto i : m_chunk_to_data){
           delete[] i;
-        }
-#elif defined(KRIPKE_USE_GPU_AWARE_MPI)
-        if(m_direct_umpire_device_storage){
-          for(auto ptr : m_chunk_to_direct_device_data){
-            detail::directHipDeviceFree(ptr);
-          }
         }
 #endif
       }
@@ -186,10 +156,6 @@ namespace detail {
         size_t chunk_id = m_subdomain_to_chunk[*sdom_id];
 
 #ifdef KRIPKE_USE_CHAI
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
-            "Direct Umpire device storage fields do not have host storage");
-#endif
         m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
         ElementPtr ptr = m_chunk_to_data[chunk_id];
@@ -209,10 +175,6 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         return  m_chunk_to_data[chunk_id];
 #else
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
-            "Direct Umpire device storage fields do not have host storage");
-#endif
         return m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
       }
@@ -228,10 +190,6 @@ namespace detail {
 #ifndef KRIPKE_USE_CHAI
         return  m_chunk_to_data[chunk_id];
 #else
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-        KRIPKE_ASSERT(!m_direct_umpire_device_storage,
-            "Direct Umpire device storage fields do not have host storage");
-#endif
         return m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
       }
@@ -249,7 +207,7 @@ namespace detail {
 #else
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
         if(m_direct_umpire_device_storage){
-          return m_chunk_to_direct_device_data[chunk_id];
+          return m_chunk_to_data[chunk_id].data(chai::GPU, false);
         }
 #endif
 #if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
@@ -303,7 +261,6 @@ namespace detail {
       chai::ExecutionSpace m_allocation_space;
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
       bool m_direct_umpire_device_storage;
-      std::vector<ElementType *> m_chunk_to_direct_device_data;
 #endif
 #endif
 		  };
@@ -407,10 +364,6 @@ namespace detail {
         size_t chunk_id = Parent::m_subdomain_to_chunk[*sdom_id];
 
 #ifdef KRIPKE_USE_CHAI
-#ifdef KRIPKE_USE_GPU_AWARE_MPI
-        KRIPKE_ASSERT(!Parent::m_direct_umpire_device_storage,
-            "Direct Umpire device storage fields do not have host storage");
-#endif
         Parent::m_chunk_to_data[chunk_id].data(chai::CPU);
 #endif
         auto ptr = Parent::m_chunk_to_data[chunk_id];
