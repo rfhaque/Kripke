@@ -215,6 +215,8 @@ namespace Core {
         if(!m_direct_umpire_device_storage) {
           ensureDeviceCurrent(chunk_id);
         }
+#else
+        ensureDeviceCurrent(chunk_id);
 #endif
         return m_chunk_to_data[chunk_id].getDevicePtr();
 #else
