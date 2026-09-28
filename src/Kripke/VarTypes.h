@@ -178,6 +178,7 @@ namespace Kripke {
           order_t{});
 #else
       field = new FieldType(set, fieldAllocationSpace<FieldType>(al_v.arch_v), order_t{});
+#endif
 #else
       field = new FieldType(set, order_t{});
 #endif

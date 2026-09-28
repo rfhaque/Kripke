@@ -228,7 +228,6 @@ namespace Core {
 #ifdef KRIPKE_USE_GPU_AWARE_MPI
       RAJA_INLINE
       void registerDeviceTouch(Kripke::SdomId sdom_id) {
-#if defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP)
 #ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
         if(m_direct_umpire_device_storage){
           return;
