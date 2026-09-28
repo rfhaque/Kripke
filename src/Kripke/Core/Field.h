@@ -86,9 +86,17 @@ namespace Core {
           // Direct plane storage bypasses the CHAI GPU allocator (normally KRIPKE_DEVICE_POOL).
           // Used only for GPU-aware MPI i/j/k_plane buffers to avoid QuickPool non-base pointers.
           if(m_direct_umpire_device_storage){
+#if defined(KRIPKE_USE_CHAI)
+            m_chunk_to_data[chunk_id] = ElementPtr(
+                sdom_size,
+                {Kripke::CPU, Kripke::GPU}, // which CHAI execution spaces are being overridden
+                {MemoryManager::getHostAllocator(), MemoryManager::getDirectDeviceAllocator()}, // matching Umpire allocators for the overridden spaces {HOST, NamedAllocationStrategy}
+                Kripke::GPU); // initial allocation space
+#else
             m_chunk_to_data[chunk_id].setHostAllocator(MemoryManager::getHostAllocator());
             m_chunk_to_data[chunk_id].setDeviceAllocator(MemoryManager::getDirectDeviceAllocator());
             m_chunk_to_data[chunk_id].allocate(sdom_size, Kripke::GPU);
+#endif
           }
           else
 #endif

@@ -64,12 +64,12 @@ umpire::Allocator MemoryManager::getHostAllocator() {
 
 umpire::Allocator MemoryManager::getDeviceAllocator() {
   auto &rm = umpire::ResourceManager::getInstance();
-  return rm.getAllocator("KRIPKE_DEVICE_DIRECT");
+  return rm.getAllocator("KRIPKE_DEVICE_POOL");
 }
 
 umpire::Allocator MemoryManager::getDirectDeviceAllocator() {
   auto &rm = umpire::ResourceManager::getInstance();
-  return rm.getAllocator("KRIPKE_DEVICE_POOL");
+  return rm.getAllocator("KRIPKE_DEVICE_DIRECT");
 }
 
 void MemoryManager::copy(void *dst, void const *src, size_t bytes) {
