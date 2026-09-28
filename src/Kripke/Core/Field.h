@@ -408,9 +408,15 @@ namespace Core {
 #if defined(KRIPKE_USE_CHAI)
       std::vector<ElementPtr> m_chunk_to_data;
       Kripke::ExecutionSpace m_allocation_space;
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+      bool m_direct_umpire_device_storage;
+#endif
 #elif defined(KRIPKE_USE_UMPIRE)
       mutable std::vector<ChunkData> m_chunk_to_data;
       Kripke::ExecutionSpace m_allocation_space;
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+      bool m_direct_umpire_device_storage;
+#endif
 #else
       std::vector<ElementPtr> m_chunk_to_data;
 #endif
