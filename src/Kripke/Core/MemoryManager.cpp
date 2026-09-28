@@ -11,16 +11,26 @@
 using namespace Kripke;
 using namespace Kripke::Core;
 
-MemoryManager::MemoryManager(int device_pool_size) : device_pool_size(device_pool_size) {
+MemoryManager::MemoryManager(size_t requested_device_pool_size) :
+  requested_device_pool_size(requested_device_pool_size)
+{
 #if defined(KRIPKE_USE_UMPIRE) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
   auto &rm = umpire::ResourceManager::getInstance();
   const char * allocator_name = "KRIPKE_DEVICE_POOL";
-  size_t umpire_device_pool_size = ((size_t) device_pool_size) * 1024 * 1024 * 1024;
+  constexpr size_t umpire_alignment = umpire::strategy::QuickPool::s_default_alignment;
+  size_t umpire_device_pool_size =
+    requested_device_pool_size > umpire_alignment
+      ? requested_device_pool_size - umpire_alignment
+      : requested_device_pool_size;
   size_t umpire_dev_block_size = 512;
   auto device_pool_allocator = rm.makeAllocator<umpire::strategy::QuickPool>(allocator_name, rm.getAllocator("DEVICE"), umpire_device_pool_size, umpire_dev_block_size);
   // Force allocation of GPU memory pool
   void *tmp = device_pool_allocator.allocate(100*sizeof(int));
   device_pool_allocator.deallocate(tmp);
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+    char const *direct_device_allocator_name = "KRIPKE_DEVICE_DIRECT";
+    rm.makeAllocator<umpire::strategy::NamedAllocationStrategy>(direct_device_allocator_name, rm.getAllocator("DEVICE"));
+#endif
 #if defined(KRIPKE_USE_CHAI)
   // Set CHAI device memory pool allocator
   auto chai_resource_manager = chai::ArrayManager::getInstance();
@@ -31,7 +41,7 @@ MemoryManager::MemoryManager(int device_pool_size) : device_pool_size(device_poo
 
 double MemoryManager::getDeviceMemoryPoolSize() {
 #if defined(KRIPKE_USE_UMPIRE) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
-  return (double) device_pool_size;
+  return ((double) requested_device_pool_size) / (1024.0 * 1024.0 * 1024.0);
 #else
       return 0.0;
 #endif
@@ -53,6 +63,11 @@ umpire::Allocator MemoryManager::getHostAllocator() {
 }
 
 umpire::Allocator MemoryManager::getDeviceAllocator() {
+  auto &rm = umpire::ResourceManager::getInstance();
+  return rm.getAllocator("KRIPKE_DEVICE_DIRECT");
+}
+
+umpire::Allocator MemoryManager::getDirectDeviceAllocator() {
   auto &rm = umpire::ResourceManager::getInstance();
   return rm.getAllocator("KRIPKE_DEVICE_POOL");
 }

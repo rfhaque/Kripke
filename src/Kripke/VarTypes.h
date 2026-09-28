@@ -32,9 +32,15 @@ namespace Kripke {
   using Field_Flux = Kripke::Core::Field<double, Direction, Group, Zone>;
   using Field_Moments = Kripke::Core::Field<double, Moment, Group, Zone>;
 
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+  using Field_IPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneJ, ZoneK>;
+  using Field_JPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneI, ZoneK>;
+  using Field_KPlane = Kripke::Core::FieldWithDirectUmpireDeviceStorage<double, Direction, Group, ZoneI, ZoneJ>;
+#else
   using Field_IPlane = Kripke::Core::Field<double, Direction, Group, ZoneJ, ZoneK>;
   using Field_JPlane = Kripke::Core::Field<double, Direction, Group, ZoneI, ZoneK>;
   using Field_KPlane = Kripke::Core::Field<double, Direction, Group, ZoneI, ZoneJ>;
+#endif
 
   using Field_Ell     = Kripke::Core::Field<double, Moment, Direction>;
   using Field_EllPlus = Kripke::Core::Field<double, Direction, Moment>;
@@ -44,9 +50,9 @@ namespace Kripke {
   using Field_SigmaS = Kripke::Core::Field<double, Material, Legendre, GlobalGroup, GlobalGroup>;
 
   using Field_Direction2Double = Kripke::Core::Field<double, Direction>;
-  using Field_Direction2Int    = Kripke::Core::FieldWithPolicy<int, true, Direction>;
+  using Field_Direction2Int    = Kripke::Core::FieldWithPolicy<int, true, Direction>; // allocated on the CPU, even in GPU mode
 
-  using Field_Adjacency        = Kripke::Core::FieldWithPolicy<GlobalSdomId, true, Dimension>;
+  using Field_Adjacency        = Kripke::Core::FieldWithPolicy<GlobalSdomId, true, Dimension>;  // allocated on the CPU, even in GPU mode
 
   using Field_Moment2Legendre  = Kripke::Core::Field<Legendre, Moment>;
 
@@ -136,27 +142,19 @@ namespace Kripke {
   }
 
 #if defined(KRIPKE_USE_UMPIRE)
-  RAJA_INLINE
-  bool archUsesDevice(ArchV arch_v)
-  {
-#if defined(KRIPKE_USE_CUDA)
-    if(arch_v == ArchV_CUDA){
-      return true;
-    }
-#endif
-#if defined(KRIPKE_USE_HIP)
-    if(arch_v == ArchV_HIP){
-      return true;
-    }
-#endif
-    return false;
-  }
-
   template<typename FieldType>
   RAJA_INLINE
   Kripke::ExecutionSpace fieldAllocationSpace(ArchV arch_v)
   {
-    if(archUsesDevice(arch_v) && !FieldType::host_resident_normal_gpu){
+    bool use_device = false;
+#if defined(KRIPKE_USE_CUDA)
+    use_device = use_device || arch_v == ArchV_CUDA;
+#endif
+#if defined(KRIPKE_USE_HIP)
+    use_device = use_device || arch_v == ArchV_HIP;
+#endif
+
+    if(use_device && !FieldType::host_resident_normal_gpu){
       return Kripke::GPU;
     }
     return Kripke::CPU;
@@ -173,6 +171,12 @@ namespace Kripke {
       using order_t = typename DefaultOrder<decltype(layout_t)>::type; 
 
 #if defined(KRIPKE_USE_UMPIRE)
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+      field = new FieldType(set,
+          fieldAllocationSpace<FieldType>(al_v.arch_v),
+          FieldType::direct_umpire_device_storage,
+          order_t{});
+#else
       field = new FieldType(set, fieldAllocationSpace<FieldType>(al_v.arch_v), order_t{});
 #else
       field = new FieldType(set, order_t{});

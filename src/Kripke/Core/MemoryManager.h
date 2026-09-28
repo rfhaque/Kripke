@@ -9,22 +9,24 @@
 #define KRIPKE_CORE_MEMORYMANAGER_H__
 
 #include <Kripke.h>
+#include <cstddef>
 
 namespace Kripke {
 namespace Core {
 
 class MemoryManager {
   protected:
-    int device_pool_size;
+    size_t requested_device_pool_size;
 
   public:
-    MemoryManager(int device_pool_size);
+    MemoryManager(size_t requested_device_pool_size);
     double getDeviceMemoryPoolSize();
     double getDeviceMemoryHighWatermark();
 
 #if defined(KRIPKE_USE_UMPIRE)
     static umpire::Allocator getHostAllocator();
     static umpire::Allocator getDeviceAllocator();
+    static umpire::Allocator getDirectDeviceAllocator();
     static void copy(void *dst, void const *src, size_t bytes);
 #endif
 };

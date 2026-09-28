@@ -35,6 +35,9 @@
 #define DEBUG
 #include <umpire/Umpire.hpp>
 #include <umpire/strategy/QuickPool.hpp>
+#ifdef KRIPKE_USE_DIRECT_UMPIRE_PLANE_STORAGE
+#include <umpire/strategy/NamedAllocationStrategy.hpp>
+#endif
 #if defined(KRIPKE_USE_CHAI)
 #include <chai/ManagedArray.hpp>
 #endif

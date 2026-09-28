@@ -11,27 +11,14 @@
 #include <Kripke/Core/Field.h>
 #include <Kripke/VarTypes.h>
 
-#include <Kripke/Timing.h>
-
 using namespace Kripke;
 
 namespace {
 
-bool fieldIsGpuBacked(Kripke::Core::FieldStorage<double> &field)
-{
-#if defined(KRIPKE_USE_UMPIRE) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
-  return field.getAllocationSpace() == Kripke::GPU;
-#else
-  (void)field;
-  return false;
-#endif
-}
-
 bool useGpuAwareMPI(Kripke::Core::FieldStorage<double> &field)
 {
-#if defined(KRIPKE_USE_GPU_AWARE_MPI) && defined(KRIPKE_USE_UMPIRE) && \
-    (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
-  return fieldIsGpuBacked(field);
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+  return field.getAllocationSpace() == Kripke::GPU;
 #else
   (void)field;
   return false;
@@ -63,17 +50,13 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
   if(dst_plane.getAllocationSpace() == Kripke::GPU &&
      src_plane.getAllocationSpace() == Kripke::GPU){
     double *dst = dst_plane.getDeviceData(dst_sdom_id);
-    double *src = src_plane.getDeviceData(src_sdom_id);
-  //for(int i = 0;i < num_elem;++ i){
-  //  dst[i] = src[i];
-  //}
+    double const *src = src_plane.getDeviceData(src_sdom_id);
 #if defined(KRIPKE_USE_CUDA)
-    RAJA::forall<RAJA::cuda_exec<256>>(
-#elif defined(KRIPKE_USE_HIP)
-    RAJA::forall<RAJA::hip_exec<256>>(
+    using PlaneCopyExec = RAJA::cuda_exec<256>;
 #else
-    RAJA::forall<RAJA::seq_exec>( // should never reach this
+    using PlaneCopyExec = RAJA::hip_exec<256>;
 #endif
+    RAJA::forall<PlaneCopyExec>(
       RAJA::RangeSegment(0, num_elem),
       KRIPKE_LAMBDA (RAJA::Index_type i){
         dst[i] = src[i];
@@ -82,6 +65,7 @@ static void copyPlane(Kripke::Core::FieldStorage<double> &dst_plane,
   }
 #endif  // #if defined(KRIPKE_USE_UMPIRE) && (defined(KRIPKE_USE_CUDA) || defined(KRIPKE_USE_HIP))
 
+  // Fallback for non-CHAI and CHAI fields that are not both GPU-backed.
   double *dst = dst_plane.getHostData(dst_sdom_id);
   double const *src = src_plane.getHostDataConst(src_sdom_id);
   for(int i = 0;i < num_elem;++ i){
@@ -135,7 +119,6 @@ void ParallelComm::dequeueSubdomain(SdomId sdom_id){
   Receives use either direct GPU plane buffers or direct host plane buffers.
 */
 void ParallelComm::postRecvs(Kripke::Core::DataStore &data_store, SdomId sdom_id){
-  KRIPKE_TIMER(data_store, PostRecvs);
   using namespace Kripke::Core;
   Comm comm;
   int mpi_rank = comm.rank();
@@ -207,7 +190,6 @@ void ParallelComm::postRecvs(Kripke::Core::DataStore &data_store, SdomId sdom_id
 void ParallelComm::postSends(Kripke::Core::DataStore &data_store, Kripke::SdomId sdom_id,
                              Kripke::Core::FieldStorage<double> *src_plane_data[3])
 {
-  KRIPKE_TIMER(data_store, PostSends);
   // post sends for downwind dependencies
   Kripke::Core::Comm comm;
   int mpi_rank = comm.rank();
@@ -304,7 +286,6 @@ void ParallelComm::waitAllSends(void){
   Checks for incomming messages, and does relevant bookkeeping.
 */
 void ParallelComm::testRecieves(void){
-  KRIPKE_TIMER((*m_data_store), testRecieves);
 #ifdef KRIPKE_USE_MPI
   // Check for any recv requests that have completed
   int num_requests = recv_requests.size();
@@ -323,12 +304,10 @@ void ParallelComm::testRecieves(void){
       // get subdomain that this completed for
       int sdom_id = recv_subdomains[index];
 
-#if defined(KRIPKE_USE_UMPIRE)
-      // Performance experiment: skip CHAI device-touch bookkeeping after
-      // GPU-aware MPI writes directly into plane data.
-      // if(useGpuAwareMPI(*m_plane_data[recv_dimensions[index]])){
-      //   m_plane_data[recv_dimensions[index]]->registerDeviceTouch(SdomId{sdom_id});
-      // }
+#ifdef KRIPKE_USE_GPU_AWARE_MPI
+      if(useGpuAwareMPI(*m_plane_data[recv_dimensions[index]])){
+        m_plane_data[recv_dimensions[index]]->registerDeviceTouch(SdomId{sdom_id});
+      }
 #endif
 
       // remove the request from the list
