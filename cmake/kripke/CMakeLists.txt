@@ -180,10 +180,7 @@ if(ENABLE_CHAI)
   set(ENABLE_TESTS Off CACHE BOOL "")
   set(KRIPKE_USE_CHAI 1)
   set(KRIPKE_USE_UMPIRE 1)
-  # CHAI uses Umpire as its allocation backend even when neither CUDA nor HIP
-  # is enabled. Keep Umpire as an explicit Kripke dependency so CPU-only CHAI
-  # configurations preserve its include and link requirements.
-  list(APPEND KRIPKE_DEPENDS chai umpire)
+  list(APPEND KRIPKE_DEPENDS chai)
 else ()
   if (ENABLE_CUDA OR ENABLE_HIP) 
     set(ENABLE_RAJA_PLUGIN Off CACHE BOOL "")
