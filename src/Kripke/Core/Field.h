@@ -569,7 +569,7 @@ namespace Core {
         }
         return OrderedViewType(Parent::getHostData(sdom_id), layout);
 #else
-        return OrderedViewType(Parent::m_chunk_to_data[chunk_id], layout);
+        return OrderedViewType(Parent::getHostData(sdom_id), layout);
 #endif
       }
 
